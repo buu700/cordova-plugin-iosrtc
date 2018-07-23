@@ -2,13 +2,14 @@
 
 'use strict';
 
+console.error('running iosrtc hook');
+
 // This hook automates this:
 // https://github.com/BasqueVoIPMafia/cordova-plugin-iosrtc/blob/master/docs/Building.md
 
 var
 	fs = require("fs"),
 	path = require("path"),
-	xcode = require('xcode'),
 
 	BUILD_VERSION = '9.0',
 	BUILD_VERSION_XCODE = '"' + BUILD_VERSION + '"',
@@ -23,15 +24,6 @@ var
 
 
 // Helpers
-
-// Returns the project name
-function getProjectName(protoPath) {
-	var
-		cordovaConfigPath = path.join(protoPath, 'config.xml'),
-		content = fs.readFileSync(cordovaConfigPath, 'utf-8');
-
-	return /<name>([\s\S]*)<\/name>/mi.exec(content)[1].trim();
-}
 
 // Drops the comments
 function nonComments(obj) {
@@ -55,14 +47,17 @@ function nonComments(obj) {
 module.exports = function (context) {
 	var
 		projectRoot = context.opts.projectRoot,
-		projectName = getProjectName(projectRoot),
-		xcconfigPath = path.join(projectRoot, '/platforms/ios/cordova/build.xcconfig'),
-		xcodeProjectName = projectName + '.xcodeproj',
-		xcodeProjectPath = path.join(projectRoot, 'platforms', 'ios', xcodeProjectName, 'project.pbxproj'),
+		xcodeProjectPath = fs.readdirSync(projectRoot).filter(function (file) { return ~file.indexOf('.xcodeproj') && fs.statSync(path.join(projectRoot, file)).isDirectory(); })[0],
+		projectName = xcodeProjectPath.slice(0, -'.xcodeproj'.length),
+		xcconfigPath = path.join(projectRoot, 'cordova', 'build.xcconfig'),
 		swiftBridgingHead = projectName + BRIDGING_HEADER_END,
 		swiftBridgingHeadXcode = '"' + swiftBridgingHead + '"',
 		swiftOptions = [''], // <-- begin to file appending AFTER initial newline
 		xcodeProject;
+
+	debug('".xcodeproj" project file found: ' + xcodeProjectPath);
+	// xcodeProjectPath = path.join(projectRoot, 'platforms', 'ios', xcodeProjectPath, 'project.pbxproj');
+	xcodeProjectPath = path.join(xcodeProjectPath, 'project.pbxproj');
 
 	// Checking if the project files are in the right place
 	if (!fs.existsSync(xcodeProjectPath)) {
@@ -79,7 +74,8 @@ module.exports = function (context) {
 	}
 	debug('".xcconfig" project file found: ' + xcconfigPath);
 
-	xcodeProject = xcode.project(xcodeProjectPath);
+	var projectFile = context.opts.cordova.project.parseProjectFile(projectRoot);
+	xcodeProject = projectFile.xcode;
 
 	// Showing info about the tasks to do
 	debug('fixing issues in the generated project files:');
@@ -105,14 +101,14 @@ module.exports = function (context) {
 
 	// "project.pbxproj"
 	// Parsing it
-	xcodeProject.parse(function (error) {
+	// xcodeProject.parse(function (error) {
 		var configurations, buildSettings;
 
-		if (error) {
-			debugerror('an error occurred during the parsing of the project file');
+		// if (error) {
+		// 	debugerror('an error occurred during the parsing of the project file: ' + error);
 
-			return;
-		}
+			// return;
+		// }
 
 
 		configurations = nonComments(xcodeProject.pbxXCBuildConfigurationSection());
@@ -129,12 +125,14 @@ module.exports = function (context) {
 		// Writing the file again
 		fs.writeFileSync(xcodeProjectPath, xcodeProject.writeSync(), 'utf-8');
 		debug('file correctly fixed: ' + xcodeProjectPath);
-	});
+	// });
 };
 
 
 function debug(msg) {
-	console.log('iosrtc-swift-support.js [INFO] ' + msg);
+	// console.log('iosrtc-swift-support.js [INFO] ' + msg);
+	// since console.log doesn't show up in the TP log we're routing these to debugerror
+	debugerror("[INFO, really] " + msg);
 }
 
 
